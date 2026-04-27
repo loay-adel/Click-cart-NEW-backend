@@ -92,10 +92,10 @@ async function startServer() {
 
   const serverInstance = app.listen(PORT, () => {
     console.log(
-      `🚀 Server ready at http://localhost:${PORT}${server.graphqlPath}`,
+      ` Server ready at http://localhost:${PORT}${server.graphqlPath}`,
     );
-    console.log(`💳 Paymob webhook: http://localhost:${PORT}/webhook/paymob`);
-    console.log(`❤️ Health check: http://localhost:${PORT}/health`);
+    console.log(` Paymob webhook: http://localhost:${PORT}/webhook/paymob`);
+    console.log(` Health check: http://localhost:${PORT}/health`);
   });
 
   serverInstance.on("error", (error) => {

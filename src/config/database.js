@@ -1,22 +1,28 @@
 const { Pool } = require("pg");
 
-// Supabase uses SSL, so we need to add special config
+// Parse the DATABASE_URL and force IPv4
+const databaseUrl = process.env.DATABASE_URL;
+
+const fixedUrl = databaseUrl?.replace(/\[::\]/g, "127.0.0.1");
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: fixedUrl,
   ssl: {
-    rejectUnauthorized: false, // Required for Supabase
+    rejectUnauthorized: false,
   },
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  connectionTimeoutMillis: 10000,
+
+  family: 4,
 });
 
-pool.on('connect', () => {
-  console.log('✅ Database connected successfully');
+pool.on("connect", () => {
+  console.log(" Database connected successfully");
 });
 
-pool.on('error', (err) => {
-  console.error('❌ Database error:', err.message);
+pool.on("error", (err) => {
+  console.error("❌ Database error:", err.message);
 });
 
 module.exports = pool;
