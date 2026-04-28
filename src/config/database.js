@@ -1,28 +1,37 @@
 const { Pool } = require("pg");
 
-// Parse the DATABASE_URL and force IPv4
-const databaseUrl = process.env.DATABASE_URL;
-
-const fixedUrl = databaseUrl?.replace(/\[::\]/g, "127.0.0.1");
-
+// Configure for Netlify Functions
 const pool = new Pool({
-  connectionString: fixedUrl,
+  connectionString: process.env.DATABASE_URL,
   ssl: {
-    rejectUnauthorized: false,
+    rejectUnauthorized: false, // Required for Supabase
   },
-  max: 20,
+  max: 1, // Netlify functions are single-threaded
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
-
-  family: 4,
+  // Keep connection alive
+  keepAlive: true,
 });
 
-pool.on("connect", () => {
-  console.log(" Database connected successfully");
+// Log connection events
+pool.on('connect', () => {
+  console.log('✅ Database connected');
 });
 
-pool.on("error", (err) => {
-  console.error("❌ Database error:", err.message);
+pool.on('error', (err) => {
+  console.error('❌ Database error:', err.message);
 });
 
-module.exports = pool;
+// Ensure connection is established
+const ensureConnection = async () => {
+  try {
+    const client = await pool.connect();
+    client.release();
+    return true;
+  } catch (error) {
+    console.error('Database connection failed:', error.message);
+    return false;
+  }
+};
+
+module.exports = { pool, ensureConnection };
