@@ -36,7 +36,6 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
-app.use(cors(corsOptions));
 
 // Raw body for webhook verification (must be before express.json())
 app.use("/webhook/paymob", express.raw({ type: "application/json" }));
