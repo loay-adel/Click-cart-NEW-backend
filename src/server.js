@@ -29,15 +29,13 @@ for (const envVar of requiredEnvVars) {
 const app = express();
 
 // CORS configuration
-const corsOptions = {
-  origin: process.env.ALLOWED_ORIGINS?.split(",") || [
-    "http://localhost:3000",
-    "http://localhost:5173",
-  ],
-  credentials: true,
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-};
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
+);
 app.use(cors(corsOptions));
 
 // Raw body for webhook verification (must be before express.json())
