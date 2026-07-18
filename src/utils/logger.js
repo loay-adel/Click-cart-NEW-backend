@@ -12,7 +12,7 @@ const logger = {
     if (process.env.DEBUG === "true") {
       console.debug(`[DEBUG] ${new Date().toISOString()}: ${message}`, ...args);
     }
-  }
+  },
 };
 
 module.exports = logger;

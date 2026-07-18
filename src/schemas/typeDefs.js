@@ -36,9 +36,11 @@ const typeDefs = gql`
     payment_method: String
     shipping_price: Float
     tax_price: Float
+    status: String!
     is_paid: Boolean
     paid_at: String
     is_delivered: Boolean
+    delivered_at: String
     created_at: String
     item_count: Int
     total_items: Int
@@ -63,11 +65,7 @@ const typeDefs = gql`
     user_id: ID!
     product_id: ID!
     quantity: Int!
-    title: String
-    description: String
-    price: Float
     subtotal: Float
-    available_quantity: Int
     product: Product
   }
 
@@ -167,22 +165,35 @@ const typeDefs = gql`
     # Products
     products(limit: Int, offset: Int): PaginatedProducts!
     product(id: ID!): Product
-    productsByCategory(category: String!, limit: Int, offset: Int): PaginatedProducts!
-    searchProducts(searchTerm: String!, limit: Int, offset: Int): PaginatedProducts!
-    productsByPriceRange(minPrice: Float!, maxPrice: Float!, limit: Int, offset: Int): PaginatedProducts!
-    
+    productsByCategory(
+      category: String!
+      limit: Int
+      offset: Int
+    ): PaginatedProducts!
+    searchProducts(
+      searchTerm: String!
+      limit: Int
+      offset: Int
+    ): PaginatedProducts!
+    productsByPriceRange(
+      minPrice: Float!
+      maxPrice: Float!
+      limit: Int
+      offset: Int
+    ): PaginatedProducts!
+
     # Orders
     userOrders(userId: ID!, limit: Int, offset: Int): [Order]
     order(id: ID!): Order
     allOrders(limit: Int, offset: Int): [Order]
-    
+
     # Cart
     cart(userId: ID!): [CartItem]
     cartTotal(userId: ID!): Float
-    
+
     # Wishlist
     wishlist(userId: ID!): [WishlistItem]
-    
+
     # User
     me: User
     userStats(userId: ID!): OrderStats
@@ -198,9 +209,9 @@ const typeDefs = gql`
       password: String!
       phone: String
     ): AuthPayload
-    
+
     login(email: String!, password: String!): AuthPayload
-    
+
     # Orders
     placeOrder(
       userId: ID!
@@ -209,7 +220,7 @@ const typeDefs = gql`
       shippingCity: String!
       paymentMethod: String!
     ): Order
-    
+
     createOrder(
       userId: ID!
       totalPrice: Float!
@@ -219,93 +230,60 @@ const typeDefs = gql`
       paymentMethod: String!
       items: [OrderItemInput]!
     ): Order
-    
-    updateOrderStatus(
-      orderId: ID!
-      isPaid: Boolean
-      isDelivered: Boolean
-    ): Order
-    
+
+    updateOrderStatus(orderId: ID!, status: String!): Order
+
     updatePaymentStatus(
       orderId: ID!
       isPaid: Boolean!
       paymentMethod: String
     ): Order
-    
-    updateDeliveryStatus(
-      orderId: ID!
-      isDelivered: Boolean!
-    ): Order
-    
-    cancelOrder(
-      orderId: ID!
-      userId: ID!
-    ): Boolean
-    
+
+    updateDeliveryStatus(orderId: ID!, isDelivered: Boolean!): Order
+
+    cancelOrder(orderId: ID!, userId: ID!): Boolean
+
     # Cart
-    addToCart(
-      userId: ID!
-      productId: ID!
-      quantity: Int!
-    ): CartItem
-    
-    removeFromCart(
-      userId: ID!
-      productId: ID!
-    ): Boolean
-    
-    updateCartItem(
-      userId: ID!
-      productId: ID!
-      quantity: Int!
-    ): CartItem
-    
+    addToCart(userId: ID!, productId: ID!, quantity: Int!): CartItem
+
+    removeFromCart(userId: ID!, productId: ID!): Boolean
+
+    updateCartItem(userId: ID!, productId: ID!, quantity: Int!): CartItem
+
     clearCart(userId: ID!): Boolean
-    
+
     # Wishlist
-    addToWishlist(
-      userId: ID!
-      productName: String!
-    ): WishlistItem
-    
-    removeFromWishlist(
-      userId: ID!
-      wishlistItemId: ID!
-    ): Boolean
-    
+    addToWishlist(userId: ID!, productName: String!): WishlistItem
+
+    removeFromWishlist(userId: ID!, wishlistItemId: ID!): Boolean
+
     clearWishlist(userId: ID!): Boolean
-    
+
     # Admin Product Management
     createProduct(input: ProductInput!): Product
-    
+
     updateProduct(id: ID!, input: UpdateProductInput!): Product
-    
+
     deleteProduct(id: ID!): Boolean
-    
+
     bulkUpdateStock(updates: [StockUpdateInput]!): Boolean
-    
+
     # Payment
     initiatePayment(
       userId: ID!
       orderId: ID!
       billingData: BillingInput!
     ): PaymentResponse
-    
-    verifyPayment(
-      orderId: ID!
-      hmac: String!
-      paymentData: String!
-    ): Boolean
-    
+
+    verifyPayment(orderId: ID!, hmac: String!, paymentData: String!): Boolean
+
     refundPayment(
       orderId: ID!
       transactionId: String!
       amount: Float!
     ): PaymentResponse
-    
-    getPaymentStatus(
-      orderId: ID!
-    ): TransactionStatus
+
+    getPaymentStatus(orderId: ID!): TransactionStatus
   }
 `;
 
