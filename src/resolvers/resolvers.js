@@ -31,7 +31,7 @@ const generateToken = (user) => {
   );
 };
 
-const paginate = (rows, limit, offset, total) => {
+const paginateProducts = (rows, limit, offset, total) => {
   return {
     products: rows,
     total: parseInt(total),
@@ -41,13 +41,23 @@ const paginate = (rows, limit, offset, total) => {
   };
 };
 
+const requireAuth = (user) => {
+  if (!user) throw new Error("Authentication required");
+};
+
+const requireAdmin = (user) => {
+  if (!user) throw new Error("Authentication required");
+  if (user.role !== "admin")
+    throw new Error("Unauthorized: Admin access required");
+};
+
 const resolvers = {
   Query: {
     products: async (_, { limit = 10, offset = 0 }) => {
       try {
         const total = await Product.countAll();
         const rows = await Product.findAll(limit, offset);
-        return paginate(rows, limit, offset, total);
+        return paginateProducts(rows, limit, offset, total);
       } catch (error) {
         logger.error("Error fetching products:", error.message);
         throw new Error("Failed to fetch products");
@@ -57,10 +67,12 @@ const resolvers = {
     product: async (_, { id }) => {
       if (!validateId(id)) throw new Error("Invalid product ID");
       try {
-        return await Product.findById(id);
+        const product = await Product.findById(id);
+        if (!product) throw new Error("Product not found");
+        return product;
       } catch (error) {
         logger.error("Error fetching product:", error.message);
-        throw new Error("Failed to fetch product");
+        throw new Error(error.message || "Failed to fetch product");
       }
     },
 
@@ -68,7 +80,7 @@ const resolvers = {
       try {
         const total = await Product.countByCategory(category);
         const rows = await Product.findByCategory(category, limit, offset);
-        return paginate(rows, limit, offset, total);
+        return paginateProducts(rows, limit, offset, total);
       } catch (error) {
         logger.error("Error in productsByCategory:", error.message);
         throw new Error("Failed to fetch products by category");
@@ -80,7 +92,7 @@ const resolvers = {
         const sanitized = sanitizeString(searchTerm);
         const total = await Product.countSearch(sanitized);
         const rows = await Product.search(sanitized, limit, offset);
-        return paginate(rows, limit, offset, total);
+        return paginateProducts(rows, limit, offset, total);
       } catch (error) {
         logger.error("Error in searchProducts:", error.message);
         throw new Error("Failed to search products");
@@ -99,7 +111,7 @@ const resolvers = {
           limit,
           offset,
         );
-        return paginate(rows, limit, offset, total);
+        return paginateProducts(rows, limit, offset, total);
       } catch (error) {
         logger.error("Error in productsByPriceRange:", error.message);
         throw new Error("Failed to fetch products by price range");
@@ -107,7 +119,7 @@ const resolvers = {
     },
 
     userOrders: async (_, { userId, limit = 10, offset = 0 }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId && user.role !== "admin") {
         throw new Error("Unauthorized: Can only view your own orders");
       }
@@ -120,7 +132,7 @@ const resolvers = {
     },
 
     order: async (_, { id }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       try {
         const order = await Order.findById(id);
         if (!order) throw new Error("Order not found");
@@ -130,16 +142,25 @@ const resolvers = {
         return order;
       } catch (error) {
         logger.error("Error in order:", error.message);
-        throw new Error("Failed to fetch order");
+        throw new Error(error.message || "Failed to fetch order");
       }
     },
 
     allOrders: async (_, { limit = 10, offset = 0 }, { user }) => {
-      if (!user || user.role !== "admin") {
-        throw new Error("Unauthorized: Admin access required");
-      }
+      requireAdmin(user);
       try {
-        return await Order.findAll(limit, offset);
+        const totalResult = await pool.query(
+          "SELECT COUNT(*) FROM orders WHERE deleted_at IS NULL",
+        );
+        const total = parseInt(totalResult.rows[0].count);
+        const rows = await Order.findAll(limit, offset);
+        return {
+          orders: rows,
+          total,
+          page: Math.floor(offset / limit) + 1,
+          limit: parseInt(limit),
+          totalPages: Math.ceil(total / limit),
+        };
       } catch (error) {
         logger.error("Error in allOrders:", error.message);
         throw new Error("Failed to fetch orders");
@@ -147,7 +168,7 @@ const resolvers = {
     },
 
     cart: async (_, { userId }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId) throw new Error("Unauthorized");
       try {
         const rows = await Cart.findByUser(userId);
@@ -172,7 +193,7 @@ const resolvers = {
     },
 
     cartTotal: async (_, { userId }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId) throw new Error("Unauthorized");
       try {
         return await Cart.getTotal(userId);
@@ -183,7 +204,7 @@ const resolvers = {
     },
 
     wishlist: async (_, { userId }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId) throw new Error("Unauthorized");
       try {
         return await Wishlist.findByUser(userId);
@@ -198,8 +219,23 @@ const resolvers = {
       return user;
     },
 
+    user: async (_, { id }, { user }) => {
+      requireAuth(user);
+      if (user.id != id && user.role !== "admin") {
+        throw new Error("Unauthorized");
+      }
+      try {
+        const targetUser = await User.findById(id);
+        if (!targetUser) throw new Error("User not found");
+        return targetUser;
+      } catch (error) {
+        logger.error("Error in user:", error.message);
+        throw new Error(error.message || "Failed to fetch user");
+      }
+    },
+
     userStats: async (_, { userId }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId && user.role !== "admin") {
         throw new Error("Unauthorized");
       }
@@ -223,21 +259,60 @@ const resolvers = {
     },
 
     allUsers: async (_, { limit = 10, offset = 0 }, { user }) => {
-      if (!user || user.role !== "admin") {
-        throw new Error("Unauthorized: Admin access required");
-      }
+      requireAdmin(user);
       try {
-        return await User.findAll(limit, offset);
+        const total = await User.countAll();
+        const rows = await User.findAll(limit, offset);
+        return {
+          users: rows,
+          total,
+          page: Math.floor(offset / limit) + 1,
+          limit: parseInt(limit),
+          totalPages: Math.ceil(total / limit),
+        };
       } catch (error) {
         logger.error("Error in allUsers:", error.message);
         throw new Error("Failed to fetch users");
+      }
+    },
+
+    dashboardStats: async (_, __, { user }) => {
+      requireAdmin(user);
+      try {
+        const usersResult = await pool.query("SELECT COUNT(*) FROM users");
+        const ordersResult = await pool.query(
+          "SELECT COUNT(*) FROM orders WHERE deleted_at IS NULL",
+        );
+        const revenueResult = await pool.query(
+          "SELECT COALESCE(SUM(total_price), 0) as revenue FROM orders WHERE is_paid = true AND deleted_at IS NULL",
+        );
+        const productsResult = await pool.query(
+          "SELECT COUNT(*) FROM products WHERE deleted_at IS NULL",
+        );
+        const pendingResult = await pool.query(
+          "SELECT COUNT(*) FROM orders WHERE status = 'pending' AND deleted_at IS NULL",
+        );
+        const deliveredResult = await pool.query(
+          "SELECT COUNT(*) FROM orders WHERE status = 'delivered' AND deleted_at IS NULL",
+        );
+
+        return {
+          totalUsers: parseInt(usersResult.rows[0].count),
+          totalOrders: parseInt(ordersResult.rows[0].count),
+          totalRevenue: parseFloat(revenueResult.rows[0].revenue),
+          totalProducts: parseInt(productsResult.rows[0].count),
+          pendingOrders: parseInt(pendingResult.rows[0].count),
+          deliveredOrders: parseInt(deliveredResult.rows[0].count),
+        };
+      } catch (error) {
+        logger.error("Error in dashboardStats:", error.message);
+        throw new Error("Failed to fetch dashboard stats");
       }
     },
   },
 
   Mutation: {
     register: async (_, { first_name, last_name, email, password, phone }) => {
-      // Validation
       if (!validateEmail(email)) throw new Error("Invalid email format");
       if (!validatePassword(password)) {
         throw new Error(
@@ -294,6 +369,63 @@ const resolvers = {
       }
     },
 
+    adminLogin: async (_, { email, password }) => {
+      if (!validateEmail(email)) throw new Error("Invalid email format");
+
+      try {
+        const user = await User.findByEmail(email);
+        if (!user) {
+          throw new Error("Invalid email or password");
+        }
+
+        if (user.role !== "admin") {
+          throw new Error("Access denied: Admin privileges required");
+        }
+
+        const valid = await bcrypt.compare(password, user.password);
+        if (!valid) {
+          throw new Error("Invalid email or password");
+        }
+
+        delete user.password;
+        const token = generateToken(user);
+        return { token, user };
+      } catch (error) {
+        logger.error("Error in adminLogin:", error.message);
+        throw new Error(error.message || "Admin login failed");
+      }
+    },
+
+    updateUser: async (_, { id, input }, { user }) => {
+      requireAdmin(user);
+      try {
+        const updates = {};
+        if (input.first_name)
+          updates.first_name = sanitizeString(input.first_name);
+        if (input.last_name)
+          updates.last_name = sanitizeString(input.last_name);
+        if (input.email) updates.email = input.email.toLowerCase().trim();
+        if (input.phone) updates.phone = sanitizeString(input.phone);
+        if (input.role) updates.role = input.role;
+
+        return await User.update(id, updates);
+      } catch (error) {
+        logger.error("Error in updateUser:", error.message);
+        throw new Error(error.message || "Failed to update user");
+      }
+    },
+
+    deleteUser: async (_, { id }, { user }) => {
+      requireAdmin(user);
+      try {
+        await User.delete(id);
+        return true;
+      } catch (error) {
+        logger.error("Error in deleteUser:", error.message);
+        throw new Error("Failed to delete user");
+      }
+    },
+
     placeOrder: async (
       _,
       {
@@ -302,66 +434,75 @@ const resolvers = {
         shippingFullName,
         shippingCity,
         paymentMethod,
+        items,
       },
       { user },
     ) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId) throw new Error("Unauthorized");
 
       try {
-        // Get cart items
-        const cartItems = await Cart.findByUser(userId);
-        if (!cartItems || cartItems.length === 0) {
+        if (!shippingAddress || !shippingFullName || !shippingCity) {
+          throw new Error("Shipping address, full name, and city are required");
+        }
+
+        if (!items || items.length === 0) {
           throw new Error("Cart is empty");
         }
 
-        // Calculate total
         let totalPrice = 0;
-        const orderItems = cartItems.map((item) => {
-          const itemTotal = item.quantity * parseFloat(item.price);
-          totalPrice += itemTotal;
-          return {
-            productId: item.product_id,
-            quantity: item.quantity,
-            price: parseFloat(item.price),
-          };
-        });
+        for (const item of items) {
+          totalPrice += item.price * item.quantity;
 
-        validateOrderInput(totalPrice, orderItems);
+          if (!item.productId || !item.quantity || !item.price) {
+            throw new Error("Invalid item data");
+          }
 
-        // Create order with transaction
-        const order = await Order.create(
-          {
-            user_id: userId,
-            total_price: totalPrice,
-            shipping_address: sanitizeString(shippingAddress),
-            shipping_full_name: sanitizeString(shippingFullName),
-            shipping_city: sanitizeString(shippingCity),
-            payment_method: paymentMethod,
-          },
-          orderItems,
-        );
+          const product = await Product.findById(item.productId);
+          if (!product) {
+            throw new Error(`Product ${item.productId} not found`);
+          }
+          if (product.availableQuantity < item.quantity) {
+            throw new Error(`Insufficient stock for product ${product.title}`);
+          }
+        }
 
-        // Deduct stock atomically
+        if (totalPrice <= 0) {
+          throw new Error("Invalid total price");
+        }
+
+        const orderData = {
+          user_id: userId,
+          total_price: totalPrice,
+          shipping_address: shippingAddress,
+          shipping_full_name: shippingFullName,
+          shipping_city: shippingCity,
+          payment_method: paymentMethod || "cash_on_delivery",
+        };
+
+        const order = await Order.create(orderData, items);
+
         await withTransaction(async (client) => {
-          for (const item of orderItems) {
-            const updated = await Product.updateStock(
-              client,
-              item.productId,
-              item.quantity,
+          for (const item of items) {
+            const result = await client.query(
+              `UPDATE products 
+           SET available_quantity = available_quantity - $1, 
+               updated_at = NOW() 
+           WHERE id = $2 AND available_quantity >= $1
+           RETURNING id`,
+              [item.quantity, item.productId],
             );
-            if (!updated) {
+
+            if (result.rows.length === 0) {
               throw new Error(
-                `Insufficient stock for product ${item.productId}`,
+                `Insufficient stock for product ID ${item.productId}`,
               );
             }
           }
         });
 
-        // Clear cart
-        await Cart.clear(userId);
-
-        return order;
+        const completeOrder = await Order.findById(order.id);
+        return completeOrder;
       } catch (error) {
         logger.error("Error in placeOrder:", error.message);
         throw new Error(error.message || "Failed to place order");
@@ -381,7 +522,7 @@ const resolvers = {
       },
       { user },
     ) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId) throw new Error("Unauthorized");
 
       validateOrderInput(totalPrice, items);
@@ -399,7 +540,6 @@ const resolvers = {
           items,
         );
 
-        // Deduct stock
         await withTransaction(async (client) => {
           for (const item of items) {
             const updated = await Product.updateStock(
@@ -423,9 +563,7 @@ const resolvers = {
     },
 
     updateOrderStatus: async (_, { orderId, status }, { user }) => {
-      if (!user || user.role !== "admin") {
-        throw new Error("Unauthorized: Admin access required");
-      }
+      requireAdmin(user);
       try {
         return await Order.updateStatus(orderId, status);
       } catch (error) {
@@ -439,9 +577,7 @@ const resolvers = {
       { orderId, isPaid, paymentMethod },
       { user },
     ) => {
-      if (!user || user.role !== "admin") {
-        throw new Error("Unauthorized: Admin access required");
-      }
+      requireAdmin(user);
       try {
         const result = await pool.query(
           `UPDATE orders SET is_paid = $1, payment_method = COALESCE($2, payment_method), 
@@ -457,15 +593,13 @@ const resolvers = {
     },
 
     updateDeliveryStatus: async (_, { orderId, isDelivered }, { user }) => {
-      if (!user || user.role !== "admin") {
-        throw new Error("Unauthorized: Admin access required");
-      }
+      requireAdmin(user);
       try {
         if (isDelivered) {
           return await Order.markAsDelivered(orderId);
         } else {
           const result = await pool.query(
-            `UPDATE orders SET is_delivered = false, delivered_at = NULL, updated_at = NOW() 
+            `UPDATE orders SET is_delivered = false, delivered_at = NULL, status = 'paid', updated_at = NOW() 
              WHERE id = $1 AND deleted_at IS NULL RETURNING *`,
             [orderId],
           );
@@ -478,7 +612,7 @@ const resolvers = {
     },
 
     cancelOrder: async (_, { orderId, userId }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId && user.role !== "admin") {
         throw new Error("Unauthorized");
       }
@@ -490,7 +624,6 @@ const resolvers = {
         if (order.status === "delivered")
           throw new Error("Cannot cancel delivered order");
 
-        // Restore stock
         const items = await Order.getItems(orderId);
         await withTransaction(async (client) => {
           for (const item of items) {
@@ -510,7 +643,7 @@ const resolvers = {
     },
 
     addToCart: async (_, { userId, productId, quantity }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId) throw new Error("Unauthorized");
       if (!validateId(productId)) throw new Error("Invalid product ID");
       if (!Number.isInteger(quantity) || quantity <= 0)
@@ -530,7 +663,7 @@ const resolvers = {
     },
 
     removeFromCart: async (_, { userId, productId }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId) throw new Error("Unauthorized");
 
       try {
@@ -543,7 +676,7 @@ const resolvers = {
     },
 
     updateCartItem: async (_, { userId, productId, quantity }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId) throw new Error("Unauthorized");
       if (!Number.isInteger(quantity) || quantity < 0)
         throw new Error("Invalid quantity");
@@ -563,7 +696,7 @@ const resolvers = {
     },
 
     clearCart: async (_, { userId }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId) throw new Error("Unauthorized");
 
       try {
@@ -576,7 +709,7 @@ const resolvers = {
     },
 
     addToWishlist: async (_, { userId, productName }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId) throw new Error("Unauthorized");
 
       try {
@@ -588,7 +721,7 @@ const resolvers = {
     },
 
     removeFromWishlist: async (_, { userId, wishlistItemId }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId) throw new Error("Unauthorized");
 
       try {
@@ -601,7 +734,7 @@ const resolvers = {
     },
 
     clearWishlist: async (_, { userId }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId) throw new Error("Unauthorized");
 
       try {
@@ -614,9 +747,7 @@ const resolvers = {
     },
 
     createProduct: async (_, { input }, { user }) => {
-      if (!user || user.role !== "admin") {
-        throw new Error("Unauthorized: Admin access required");
-      }
+      requireAdmin(user);
 
       try {
         return await Product.create({
@@ -635,9 +766,7 @@ const resolvers = {
     },
 
     updateProduct: async (_, { id, input }, { user }) => {
-      if (!user || user.role !== "admin") {
-        throw new Error("Unauthorized: Admin access required");
-      }
+      requireAdmin(user);
 
       try {
         return await Product.update(id, input);
@@ -648,9 +777,7 @@ const resolvers = {
     },
 
     deleteProduct: async (_, { id }, { user }) => {
-      if (!user || user.role !== "admin") {
-        throw new Error("Unauthorized: Admin access required");
-      }
+      requireAdmin(user);
 
       try {
         await Product.delete(id);
@@ -662,9 +789,7 @@ const resolvers = {
     },
 
     bulkUpdateStock: async (_, { updates }, { user }) => {
-      if (!user || user.role !== "admin") {
-        throw new Error("Unauthorized: Admin access required");
-      }
+      requireAdmin(user);
 
       try {
         await withTransaction(async (client) => {
@@ -683,7 +808,7 @@ const resolvers = {
     },
 
     initiatePayment: async (_, { userId, orderId, billingData }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
       if (user.id != userId) throw new Error("Unauthorized");
 
       try {
@@ -744,9 +869,7 @@ const resolvers = {
     },
 
     refundPayment: async (_, { orderId, transactionId, amount }, { user }) => {
-      if (!user || user.role !== "admin") {
-        throw new Error("Unauthorized: Admin access required");
-      }
+      requireAdmin(user);
 
       try {
         const result = await paymob.refundTransaction(transactionId, amount);
@@ -766,7 +889,7 @@ const resolvers = {
     },
 
     getPaymentStatus: async (_, { orderId }, { user }) => {
-      if (!user) throw new Error("Authentication required");
+      requireAuth(user);
 
       try {
         const order = await Order.findById(orderId);

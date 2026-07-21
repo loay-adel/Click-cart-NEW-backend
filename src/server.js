@@ -148,7 +148,6 @@ const getUser = async (token) => {
 };
 
 async function startServer() {
-  // Ensure database is reachable before starting
   const dbHealthy = await ensureConnection();
   if (!dbHealthy) {
     console.error("❌ Cannot start server: Database unreachable");
@@ -165,7 +164,6 @@ async function startServer() {
       return { user, token, req };
     },
     formatError: (error) => {
-      // Don't leak internal errors in production
       if (process.env.NODE_ENV === "production") {
         if (
           error.message.includes("Database") ||
@@ -203,8 +201,6 @@ async function startServer() {
       console.log("Database pool closed");
       process.exit(0);
     });
-
-    // Force shutdown after 30s
     setTimeout(() => {
       console.error("Forced shutdown after timeout");
       process.exit(1);

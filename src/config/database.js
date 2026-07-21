@@ -1,37 +1,48 @@
 const { Pool } = require("pg");
 
-// Configure for Netlify Functions
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
-    rejectUnauthorized: false, // Required for Supabase
+    rejectUnauthorized: false,
   },
-  max: 1, // Netlify functions are single-threaded
+  max: 1,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
-  // Keep connection alive
   keepAlive: true,
 });
 
-// Log connection events
-pool.on('connect', () => {
-  console.log('✅ Database connected');
+pool.on("connect", () => {
+  console.log("✅ Database connected");
 });
 
-pool.on('error', (err) => {
-  console.error('❌ Database error:', err.message);
+pool.on("error", (err) => {
+  console.error("❌ Database error:", err.message);
 });
 
-// Ensure connection is established
 const ensureConnection = async () => {
   try {
     const client = await pool.connect();
     client.release();
     return true;
   } catch (error) {
-    console.error('Database connection failed:', error.message);
+    console.error("Database connection failed:", error.message);
     return false;
   }
 };
 
-module.exports = { pool, ensureConnection };
+const withTransaction = async (callback) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await callback(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+module.exports = { pool, ensureConnection, withTransaction };

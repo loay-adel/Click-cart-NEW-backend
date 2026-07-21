@@ -55,9 +55,9 @@ const typeDefs = gql`
     product_id: ID!
     quantity: Int!
     price: Float!
-    product: Product
     title: String
     thumbnail: String
+    product: Product
   }
 
   type CartItem {
@@ -97,6 +97,22 @@ const typeDefs = gql`
     totalPages: Int!
   }
 
+  type PaginatedUsers {
+    users: [User]!
+    total: Int!
+    page: Int!
+    limit: Int!
+    totalPages: Int!
+  }
+
+  type PaginatedOrders {
+    orders: [Order]!
+    total: Int!
+    page: Int!
+    limit: Int!
+    totalPages: Int!
+  }
+
   type PaymentResponse {
     success: Boolean!
     paymentKey: String
@@ -117,10 +133,21 @@ const typeDefs = gql`
     data: String
   }
 
+  type DashboardStats {
+    totalUsers: Int!
+    totalOrders: Int!
+    totalRevenue: Float!
+    totalProducts: Int!
+    pendingOrders: Int!
+    deliveredOrders: Int!
+  }
+
   input OrderItemInput {
     productId: ID!
     quantity: Int!
     price: Float!
+    title: String
+    thumbnail: String
   }
 
   input ProductInput {
@@ -161,8 +188,15 @@ const typeDefs = gql`
     country: String
   }
 
+  input UpdateUserInput {
+    first_name: String
+    last_name: String
+    email: String
+    phone: String
+    role: String
+  }
+
   type Query {
-    # Products
     products(limit: Int, offset: Int): PaginatedProducts!
     product(id: ID!): Product
     productsByCategory(
@@ -182,26 +216,24 @@ const typeDefs = gql`
       offset: Int
     ): PaginatedProducts!
 
-    # Orders
     userOrders(userId: ID!, limit: Int, offset: Int): [Order]
     order(id: ID!): Order
-    allOrders(limit: Int, offset: Int): [Order]
+    allOrders(limit: Int, offset: Int): PaginatedOrders!
 
-    # Cart
     cart(userId: ID!): [CartItem]
     cartTotal(userId: ID!): Float
 
-    # Wishlist
     wishlist(userId: ID!): [WishlistItem]
 
-    # User
     me: User
+    user(id: ID!): User
     userStats(userId: ID!): OrderStats
-    allUsers(limit: Int, offset: Int): [User]
+    allUsers(limit: Int, offset: Int): PaginatedUsers!
+
+    dashboardStats: DashboardStats!
   }
 
   type Mutation {
-    # Auth
     register(
       first_name: String!
       last_name: String!
@@ -211,15 +243,19 @@ const typeDefs = gql`
     ): AuthPayload
 
     login(email: String!, password: String!): AuthPayload
+    adminLogin(email: String!, password: String!): AuthPayload
 
-    # Orders
+    updateUser(id: ID!, input: UpdateUserInput!): User
+    deleteUser(id: ID!): Boolean
+
     placeOrder(
       userId: ID!
       shippingAddress: String!
       shippingFullName: String!
       shippingCity: String!
       paymentMethod: String!
-    ): Order
+      items: [OrderItemInput!]!
+    ): Order!
 
     createOrder(
       userId: ID!
@@ -243,7 +279,6 @@ const typeDefs = gql`
 
     cancelOrder(orderId: ID!, userId: ID!): Boolean
 
-    # Cart
     addToCart(userId: ID!, productId: ID!, quantity: Int!): CartItem
 
     removeFromCart(userId: ID!, productId: ID!): Boolean
@@ -252,14 +287,12 @@ const typeDefs = gql`
 
     clearCart(userId: ID!): Boolean
 
-    # Wishlist
     addToWishlist(userId: ID!, productName: String!): WishlistItem
 
     removeFromWishlist(userId: ID!, wishlistItemId: ID!): Boolean
 
     clearWishlist(userId: ID!): Boolean
 
-    # Admin Product Management
     createProduct(input: ProductInput!): Product
 
     updateProduct(id: ID!, input: UpdateProductInput!): Product
@@ -268,7 +301,6 @@ const typeDefs = gql`
 
     bulkUpdateStock(updates: [StockUpdateInput]!): Boolean
 
-    # Payment
     initiatePayment(
       userId: ID!
       orderId: ID!
